@@ -5,33 +5,43 @@ from dotenv import load_dotenv
 from langchain.chains import RetrievalQA
 from langchain_community.llms import OpenAI
 from langchain_community.embeddings import OpenAIEmbeddings
-from langchain_community.vectorstores import Pinecone as LangchainPinecone
+from langchain_community.vectorstores.pinecone import Pinecone as LangchainPinecone
 
-from pinecone import Pinecone
+from pinecone import Pinecone, ServerlessSpec
 
-# Load environment variables
+# Load .env or Streamlit secrets
 load_dotenv()
-
-# Load secrets
 openai_api_key = st.secrets["OPENAI_API_KEY"]
 pinecone_api_key = st.secrets["PINECONE_API_KEY"]
 
-# Streamlit UI setup
+# UI Setup
 st.set_page_config(page_title="AICA RAG Chatbot", page_icon="🧠")
 st.title("AICA RAG Chatbot 🤖")
 
-# Initialize Pinecone client
+# Initialize Pinecone Client (v3)
 pc = Pinecone(api_key=pinecone_api_key)
+
 index_name = "aica-chatbot"
+
+# Create index if not exists (optional)
+if index_name not in [i.name for i in pc.list_indexes()]:
+    pc.create_index(
+        name=index_name,
+        dimension=1536,
+        metric="cosine",
+        spec=ServerlessSpec(cloud="aws", region="us-east-1")
+    )
+
 index = pc.Index(index_name)
 
 # Set up embeddings
 embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
 
-# Use Langchain Pinecone wrapper
-vectorstore = LangchainPinecone.from_existing_index(
-    index_name=index_name,
-    embedding=embeddings
+# Use LangChain Pinecone wrapper
+vectorstore = LangchainPinecone(
+    index=index,
+    embedding=embeddings,
+    text_key="text"
 )
 
 # QA Chain setup
@@ -41,10 +51,10 @@ qa = RetrievalQA.from_chain_type(
     retriever=vectorstore.as_retriever()
 )
 
-# User Query Input
-query = st.text_input("Ask your question related to the PDF content")
+# User input
+query = st.text_input("Ask your question")
 
 if query:
-    with st.spinner("Generating Answer..."):
+    with st.spinner("Thinking..."):
         response = qa.run(query)
         st.success(response)
