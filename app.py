@@ -13,7 +13,7 @@ load_dotenv()
 # Streamlit secrets for keys
 openai_api_key = st.secrets["OPENAI_API_KEY"]
 pinecone_api_key = st.secrets["PINECONE_API_KEY"]
-pinecone_env = st.secrets["PINECONE_ENV"]
+pinecone_env = st.secrets["PINECONE_ENVIRONMENT"]
 
 # Initialize Pinecone
 pinecone.init(api_key=pinecone_api_key, environment=pinecone_env)
