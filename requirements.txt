@@ -1,7 +1,6 @@
+langchain
+langchain-community
+openai
 streamlit
 python-dotenv
-langchain
-openai
 pinecone-client
-PyPDF2
-tiktoken
