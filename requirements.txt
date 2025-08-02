@@ -3,4 +3,5 @@ langchain-community
 openai
 streamlit
 python-dotenv
-pinecone
+pinecone-client==2.2.4
+
