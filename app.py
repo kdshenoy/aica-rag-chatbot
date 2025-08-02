@@ -5,45 +5,53 @@ from dotenv import load_dotenv
 from langchain.chains import RetrievalQA
 from langchain_community.llms import OpenAI
 from langchain_community.embeddings import OpenAIEmbeddings
-from langchain_community.vectorstores import Pinecone as LangchainPinecone
+from langchain_community.vectorstores.pinecone import Pinecone as LangchainPinecone
 
-import pinecone  # Legacy client v2.x
+from pinecone import Pinecone, ServerlessSpec  # ✅ Pinecone v3 syntax
 
-# Load API Keys
+# Load environment or Streamlit secrets
 load_dotenv()
 openai_api_key = st.secrets["OPENAI_API_KEY"]
 pinecone_api_key = st.secrets["PINECONE_API_KEY"]
 
-# Streamlit UI
+# Set up Streamlit UI
 st.set_page_config(page_title="AICA RAG Chatbot", page_icon="🧠")
 st.title("AICA RAG Chatbot 🤖")
 
-# Initialize legacy Pinecone client (v2.x)
-pinecone.init(api_key=pinecone_api_key, environment="us-east-1")  # Set correct region
+# ✅ Pinecone v3 client init
+pc = Pinecone(api_key=pinecone_api_key)
 
 index_name = "aica-chatbot"
 
-# Ensure index exists
-if index_name not in pinecone.list_indexes():
-    pinecone.create_index(index_name, dimension=1536, metric="cosine")
+# ✅ Create index if not exists
+if index_name not in [index.name for index in pc.list_indexes()]:
+    pc.create_index(
+        name=index_name,
+        dimension=1536,
+        metric="cosine",
+        spec=ServerlessSpec(cloud="aws", region="us-east-1")
+    )
 
-# LangChain-compatible Pinecone connection
+# ✅ Get Index object (required by LangChain)
+index = pc.Index(index_name)
+
+# ✅ Set up Embeddings and LangChain Pinecone Wrapper
 embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
 
-vectorstore = LangchainPinecone.from_existing_index(
-    index_name=index_name,
+vectorstore = LangchainPinecone(
+    index=index,
     embedding=embeddings,
     text_key="text"
 )
 
-# QA Chain
+# ✅ Setup Retrieval QA Chain
 qa = RetrievalQA.from_chain_type(
     llm=OpenAI(openai_api_key=openai_api_key),
     chain_type="stuff",
     retriever=vectorstore.as_retriever()
 )
 
-# Input and Response
+# ✅ Prompt Input
 query = st.text_input("Ask your question:")
 
 if query:
