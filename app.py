@@ -1,48 +1,52 @@
 import os
 import streamlit as st
 from dotenv import load_dotenv
+from langchain_community.vectorstores import Pinecone as LangchainPinecone
+from langchain_openai import OpenAIEmbeddings
+from pinecone import Pinecone, ServerlessSpec
 
-from langchain.chains import RetrievalQA
-from langchain_community.llms import OpenAI
-from langchain_community.embeddings import OpenAIEmbeddings
-from langchain_community.vectorstores.pinecone import Pinecone as LangchainPinecone
-
-import pinecone  # v2 compatible
-
-# Load secrets
+# Load environment variables
 load_dotenv()
-openai_api_key = st.secrets["OPENAI_API_KEY"]
-pinecone_api_key = st.secrets["PINECONE_API_KEY"]
+openai_api_key = os.getenv("OPENAI_API_KEY")
+pinecone_api_key = os.getenv("PINECONE_API_KEY")
 
-# UI
-st.set_page_config(page_title="AICA RAG Chatbot", page_icon="🧠")
+# UI title
 st.title("AICA RAG Chatbot 🤖")
 
-# Init Pinecone v2
-pinecone.init(api_key=pinecone_api_key, environment="us-east-1")
+# Initialize Pinecone v3 client
+pc = Pinecone(api_key=pinecone_api_key)
+
+# Index setup
 index_name = "aica-chatbot"
+if index_name not in pc.list_indexes().names():
+    pc.create_index(
+        name=index_name,
+        dimension=1536,
+        metric="cosine",  # or "dotproduct" or "euclidean"
+        spec=ServerlessSpec(
+            cloud="aws",
+            region="us-east-1"
+        )
+    )
 
-# Create index if not exists
-if index_name not in pinecone.list_indexes():
-    pinecone.create_index(name=index_name, dimension=1536, metric="cosine")
+# Connect to the index
+index = pc.Index(index_name)
 
-# Connect to index
-index = pinecone.Index(index_name)
-
-# LangChain Vectorstore
+# Create embedding model
 embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
-vectorstore = LangchainPinecone(index=index, embedding=embeddings, text_key="text")
 
-# Retrieval QA
-qa = RetrievalQA.from_chain_type(
-    llm=OpenAI(openai_api_key=openai_api_key),
-    chain_type="stuff",
-    retriever=vectorstore.as_retriever()
+# Set up vector store using LangChain wrapper
+vectorstore = LangchainPinecone(
+    index=index,
+    embedding=embeddings,
+    text_key="text"
 )
 
-# Streamlit input
+# Basic user input for search
 query = st.text_input("Ask your question:")
+
 if query:
-    with st.spinner("Thinking..."):
-        result = qa.run(query)
-        st.success(result)
+    results = vectorstore.similarity_search(query, k=3)
+    st.write("Top Results:")
+    for i, doc in enumerate(results):
+        st.write(f"**{i+1}.** {doc.page_content}")
