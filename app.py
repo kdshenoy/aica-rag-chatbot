@@ -7,53 +7,42 @@ from langchain_community.llms import OpenAI
 from langchain_community.embeddings import OpenAIEmbeddings
 from langchain_community.vectorstores.pinecone import Pinecone as LangchainPinecone
 
-from pinecone import Pinecone, ServerlessSpec  # ✅ Pinecone v3 syntax
+import pinecone  # ✅ v2.x style
 
-# Load environment or Streamlit secrets
+# Load secrets
 load_dotenv()
 openai_api_key = st.secrets["OPENAI_API_KEY"]
 pinecone_api_key = st.secrets["PINECONE_API_KEY"]
 
-# Set up Streamlit UI
+# UI
 st.set_page_config(page_title="AICA RAG Chatbot", page_icon="🧠")
 st.title("AICA RAG Chatbot 🤖")
 
-# ✅ Pinecone v3 client init
-pc = Pinecone(api_key=pinecone_api_key)
+# ✅ Initialize Pinecone (v2.x style)
+pinecone.init(api_key=pinecone_api_key, environment="us-east-1")
 
 index_name = "aica-chatbot"
 
 # ✅ Create index if not exists
-if index_name not in [index.name for index in pc.list_indexes()]:
-    pc.create_index(
-        name=index_name,
-        dimension=1536,
-        metric="cosine",
-        spec=ServerlessSpec(cloud="aws", region="us-east-1")
-    )
+if index_name not in pinecone.list_indexes():
+    pinecone.create_index(index_name, dimension=1536, metric="cosine")
 
-# ✅ Get Index object (required by LangChain)
-index = pc.Index(index_name)
+# ✅ Connect to index (returns pinecone.Index)
+index = pinecone.Index(index_name)
 
-# ✅ Set up Embeddings and LangChain Pinecone Wrapper
+# ✅ Embed + Vectorstore
 embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
+vectorstore = LangchainPinecone(index=index, embedding=embeddings, text_key="text")
 
-vectorstore = LangchainPinecone(
-    index=index,
-    embedding=embeddings,
-    text_key="text"
-)
-
-# ✅ Setup Retrieval QA Chain
+# ✅ RetrievalQA Chain
 qa = RetrievalQA.from_chain_type(
     llm=OpenAI(openai_api_key=openai_api_key),
     chain_type="stuff",
     retriever=vectorstore.as_retriever()
 )
 
-# ✅ Prompt Input
+# ✅ User Query
 query = st.text_input("Ask your question:")
-
 if query:
     with st.spinner("Thinking..."):
         result = qa.run(query)
