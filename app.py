@@ -1,69 +1,50 @@
 import os
 import streamlit as st
 from dotenv import load_dotenv
-import tempfile
 
-from langchain_community.vectorstores import Pinecone as LangchainPinecone
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from pinecone import Pinecone, ServerlessSpec
-from langchain.text_splitter import CharacterTextSplitter
-from langchain_community.document_loaders import PyPDFLoader
 from langchain.chains import RetrievalQA
+from langchain_community.vectorstores.pinecone import Pinecone as LangchainPinecone
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from pinecone import Pinecone, ServerlessSpec
 
-# ─── Load Secrets ─────────────────────────────────────
-load_dotenv()
+# Load secrets
 openai_api_key = st.secrets["OPENAI_API_KEY"]
 pinecone_api_key = st.secrets["PINECONE_API_KEY"]
+pinecone_env = st.secrets["PINECONE_ENVIRONMENT"]
 
-# ─── Streamlit Page Setup ─────────────────────────────
+# Streamlit UI
 st.set_page_config(page_title="AICA RAG Chatbot", page_icon="🤖")
-st.title("AICA RAG Chatbot")
+st.title("AICA RAG Chatbot 🤖")
 
-# ─── Initialize Pinecone ──────────────────────────────
+# Initialize Pinecone v3 client
 pc = Pinecone(api_key=pinecone_api_key)
+
 index_name = "aica-chatbot"
 
-if index_name not in pc.list_indexes().names():
+# Create index if it doesn't exist
+if index_name not in [i.name for i in pc.list_indexes()]:
     pc.create_index(
         name=index_name,
         dimension=1536,
         metric="cosine",
-        spec=ServerlessSpec(cloud="aws", region="us-east-1")
+        spec=ServerlessSpec(cloud="aws", region=pinecone_env)
     )
 
-# ─── Upload PDF and Ask Questions ─────────────────────
-uploaded_file = st.file_uploader("Upload your PDF", type="pdf")
-query = st.text_input("Ask a question about the uploaded document")
+# Connect to existing index
+index = pc.Index(index_name)
 
-if uploaded_file and query:
-    with st.spinner("Processing..."):
+# Embedding & Vector Store
+embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
+vectorstore = LangchainPinecone(index=index, embedding=embeddings, text_key="text")
 
-        # Save uploaded file to a temporary location
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-            tmp_file.write(uploaded_file.read())
-            tmp_path = tmp_file.name
+# QA chain
+llm = ChatOpenAI(openai_api_key=openai_api_key, model_name="gpt-4")
+qa_chain = RetrievalQA.from_chain_type(llm=llm, retriever=vectorstore.as_retriever())
 
-        # Load and split PDF
-        loader = PyPDFLoader(tmp_path)
-        documents = loader.load()
-        text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-        docs = text_splitter.split_documents(documents)
+# User input
+query = st.text_input("Ask your question 👇")
 
-        # Embedding model
-        embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
-
-        # Create vectorstore
-        vectorstore = LangchainPinecone.from_documents(
-            docs, embedding=embeddings, index_name=index_name
-        )
-
-        # QA Chain
-        qa = RetrievalQA.from_chain_type(
-            llm=ChatOpenAI(openai_api_key=openai_api_key, temperature=0),
-            chain_type="stuff",
-            retriever=vectorstore.as_retriever()
-        )
-
-        # Run Query
-        answer = qa.run(query)
-        st.success(answer)
+if query:
+    with st.spinner("Thinking..."):
+        response = qa_chain.run(query)
+        st.markdown(f"**Answer:** {response}")

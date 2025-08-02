@@ -2,6 +2,6 @@ streamlit
 python-dotenv
 openai
 langchain==0.1.14
-langchain-community==0.0.24
+langchain-community==0.0.32
 pinecone-client>=3.0.0
 langchain-openai==0.0.8
