@@ -1,7 +1,7 @@
 streamlit
 python-dotenv
 openai
-langchain
-langchain-community
+langchain==0.1.14
+langchain-community==0.0.24
 pinecone-client>=3.0.0
-langchain-openai @ git+https://github.com/langchain-ai/langchain-openai.git@4d433eb
+langchain-openai==0.0.8
