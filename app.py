@@ -12,35 +12,36 @@ from pinecone import Pinecone
 # Load environment variables
 load_dotenv()
 
-# Streamlit secrets for keys
+# Load secrets
 openai_api_key = st.secrets["OPENAI_API_KEY"]
 pinecone_api_key = st.secrets["PINECONE_API_KEY"]
 
-# Page Configuration
+# Streamlit UI setup
 st.set_page_config(page_title="AICA RAG Chatbot", page_icon="🧠")
 st.title("AICA RAG Chatbot 🤖")
 
-# Initialize Pinecone (new method)
+# Initialize Pinecone client
 pc = Pinecone(api_key=pinecone_api_key)
-
-# Load existing index
 index_name = "aica-chatbot"
 index = pc.Index(index_name)
 
-# Set up OpenAI Embeddings
+# Set up embeddings
 embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
 
-# Load vector store using LangChain’s Pinecone wrapper
-vectorstore = LangchainPinecone(index, embeddings.embed_query, "text")
+# Use Langchain Pinecone wrapper
+vectorstore = LangchainPinecone.from_existing_index(
+    index_name=index_name,
+    embedding=embeddings
+)
 
-# Set up RetrievalQA chain
+# QA Chain setup
 qa = RetrievalQA.from_chain_type(
     llm=OpenAI(openai_api_key=openai_api_key),
     chain_type="stuff",
     retriever=vectorstore.as_retriever()
 )
 
-# Streamlit UI
+# User Query Input
 query = st.text_input("Ask your question related to the PDF content")
 
 if query:
