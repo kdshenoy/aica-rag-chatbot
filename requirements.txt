@@ -4,4 +4,4 @@ openai
 langchain
 langchain-community
 pinecone-client>=3.0.0
-langchain-openai @ https://github.com/langchain-ai/langchain-openai/archive/refs/heads/main.zip
+langchain-openai @ git+https://github.com/langchain-ai/langchain-openai.git@4d433eb
