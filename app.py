@@ -4,49 +4,58 @@ from dotenv import load_dotenv
 from langchain_community.vectorstores import Pinecone as LangchainPinecone
 from langchain_openai import OpenAIEmbeddings
 from pinecone import Pinecone, ServerlessSpec
+from langchain.text_splitter import CharacterTextSplitter
+from langchain_community.document_loaders import PyPDFLoader
+from langchain.chains.question_answering import load_qa_chain
+from langchain.chains import RetrievalQA
+from langchain_openai import ChatOpenAI
 
-# Load environment variables
+# Load .env file
 load_dotenv()
 openai_api_key = os.getenv("OPENAI_API_KEY")
 pinecone_api_key = os.getenv("PINECONE_API_KEY")
 
-# UI title
+# Streamlit app title
 st.title("AICA RAG Chatbot 🤖")
 
-# Initialize Pinecone v3 client
+# Initialize Pinecone v3
 pc = Pinecone(api_key=pinecone_api_key)
-
-# Index setup
 index_name = "aica-chatbot"
+
+# Check if index exists, else create it
 if index_name not in pc.list_indexes().names():
     pc.create_index(
         name=index_name,
         dimension=1536,
-        metric="cosine",  # or "dotproduct" or "euclidean"
-        spec=ServerlessSpec(
-            cloud="aws",
-            region="us-east-1"
-        )
+        metric="cosine",
+        spec=ServerlessSpec(cloud="aws", region="us-east-1")
     )
 
-# Connect to the index
-index = pc.Index(index_name)
+# Upload PDF file
+uploaded_file = st.file_uploader("Upload your PDF", type="pdf")
+query = st.text_input("Ask a question about the PDF")
 
-# Create embedding model
-embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
+if uploaded_file and query:
+    with st.spinner("Processing..."):
 
-# Set up vector store using LangChain wrapper
-vectorstore = LangchainPinecone(
-    index=index,
-    embedding=embeddings,
-    text_key="text"
-)
+        # Load and split PDF
+        loader = PyPDFLoader(uploaded_file.name)
+        documents = loader.load()
+        text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+        docs = text_splitter.split_documents(documents)
 
-# Basic user input for search
-query = st.text_input("Ask your question:")
+        # Embed and store in Pinecone
+        embeddings = OpenAIEmbeddings()
+        vectorstore = LangchainPinecone.from_documents(
+            docs, embedding=embeddings, index_name=index_name
+        )
 
-if query:
-    results = vectorstore.similarity_search(query, k=3)
-    st.write("Top Results:")
-    for i, doc in enumerate(results):
-        st.write(f"**{i+1}.** {doc.page_content}")
+        # Run RetrievalQA chain
+        qa = RetrievalQA.from_chain_type(
+            llm=ChatOpenAI(temperature=0),
+            chain_type="stuff",
+            retriever=vectorstore.as_retriever()
+        )
+
+        result = qa.run(query)
+        st.success(result)
