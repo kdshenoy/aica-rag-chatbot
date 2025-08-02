@@ -1,11 +1,13 @@
-import streamlit as st
 import os
-from langchain_community.llms import OpenAI
-from langchain.chains import RetrievalQA
-from langchain_community.embeddings import OpenAIEmbeddings
-from langchain_community.vectorstores import Pinecone
-import pinecone
+import streamlit as st
 from dotenv import load_dotenv
+
+from langchain.chains import RetrievalQA
+from langchain_community.llms import OpenAI
+from langchain_community.embeddings import OpenAIEmbeddings
+from langchain_community.vectorstores import Pinecone as LangchainPinecone
+
+from pinecone import Pinecone
 
 # Load environment variables
 load_dotenv()
@@ -13,28 +15,35 @@ load_dotenv()
 # Streamlit secrets for keys
 openai_api_key = st.secrets["OPENAI_API_KEY"]
 pinecone_api_key = st.secrets["PINECONE_API_KEY"]
-pinecone_env = st.secrets["PINECONE_ENVIRONMENT"]
 
-# Initialize Pinecone
-pinecone.init(api_key=pinecone_api_key, environment=pinecone_env)
+# Page Configuration
+st.set_page_config(page_title="AICA RAG Chatbot", page_icon="🧠")
+st.title("AICA RAG Chatbot 🤖")
 
-# Set up embeddings
+# Initialize Pinecone (new method)
+pc = Pinecone(api_key=pinecone_api_key)
+
+# Load existing index
+index_name = "aica-chatbot"
+index = pc.Index(index_name)
+
+# Set up OpenAI Embeddings
 embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
 
-# Load existing index from Pinecone
-index = Pinecone.from_existing_index(index_name="aica-chatbot", embedding=embeddings)
+# Load vector store using LangChain’s Pinecone wrapper
+vectorstore = LangchainPinecone(index, embeddings.embed_query, "text")
+
+# Set up RetrievalQA chain
+qa = RetrievalQA.from_chain_type(
+    llm=OpenAI(openai_api_key=openai_api_key),
+    chain_type="stuff",
+    retriever=vectorstore.as_retriever()
+)
 
 # Streamlit UI
-st.set_page_config(page_title="AICA RAG Chatbot")
-st.title("🤖 AICA RAG Chatbot")
-st.markdown("Upload documents (PDF, DOCX, XLSX) and ask questions in natural language.")
-
-# Query input
-query = st.text_input("Ask a question based on your uploaded docs or the indexed database:")
+query = st.text_input("Ask your question related to the PDF content")
 
 if query:
-    llm = OpenAI(openai_api_key=openai_api_key, temperature=0)
-    qa = RetrievalQA.from_chain_type(llm=llm, retriever=index.as_retriever())
-    result = qa.run(query)
-    st.write("### 📌 Answer:")
-    st.success(result)
+    with st.spinner("Generating Answer..."):
+        response = qa.run(query)
+        st.success(response)
