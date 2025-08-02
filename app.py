@@ -1,28 +1,28 @@
 import os
 import streamlit as st
 from dotenv import load_dotenv
+import tempfile
+
 from langchain_community.vectorstores import Pinecone as LangchainPinecone
-from langchain_openai import OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from pinecone import Pinecone, ServerlessSpec
 from langchain.text_splitter import CharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader
-from langchain.chains.question_answering import load_qa_chain
 from langchain.chains import RetrievalQA
-from langchain_openai import ChatOpenAI
 
-# Load .env file
+# ─── Load Secrets ─────────────────────────────────────
 load_dotenv()
-openai_api_key = os.getenv("OPENAI_API_KEY")
-pinecone_api_key = os.getenv("PINECONE_API_KEY")
+openai_api_key = st.secrets["OPENAI_API_KEY"]
+pinecone_api_key = st.secrets["PINECONE_API_KEY"]
 
-# Streamlit app title
-st.title("AICA RAG Chatbot 🤖")
+# ─── Streamlit Page Setup ─────────────────────────────
+st.set_page_config(page_title="AICA RAG Chatbot", page_icon="🤖")
+st.title("AICA RAG Chatbot")
 
-# Initialize Pinecone v3
+# ─── Initialize Pinecone ──────────────────────────────
 pc = Pinecone(api_key=pinecone_api_key)
 index_name = "aica-chatbot"
 
-# Check if index exists, else create it
 if index_name not in pc.list_indexes().names():
     pc.create_index(
         name=index_name,
@@ -31,31 +31,39 @@ if index_name not in pc.list_indexes().names():
         spec=ServerlessSpec(cloud="aws", region="us-east-1")
     )
 
-# Upload PDF file
+# ─── Upload PDF and Ask Questions ─────────────────────
 uploaded_file = st.file_uploader("Upload your PDF", type="pdf")
-query = st.text_input("Ask a question about the PDF")
+query = st.text_input("Ask a question about the uploaded document")
 
 if uploaded_file and query:
     with st.spinner("Processing..."):
 
+        # Save uploaded file to a temporary location
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+            tmp_file.write(uploaded_file.read())
+            tmp_path = tmp_file.name
+
         # Load and split PDF
-        loader = PyPDFLoader(uploaded_file.name)
+        loader = PyPDFLoader(tmp_path)
         documents = loader.load()
         text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         docs = text_splitter.split_documents(documents)
 
-        # Embed and store in Pinecone
-        embeddings = OpenAIEmbeddings()
+        # Embedding model
+        embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
+
+        # Create vectorstore
         vectorstore = LangchainPinecone.from_documents(
             docs, embedding=embeddings, index_name=index_name
         )
 
-        # Run RetrievalQA chain
+        # QA Chain
         qa = RetrievalQA.from_chain_type(
-            llm=ChatOpenAI(temperature=0),
+            llm=ChatOpenAI(openai_api_key=openai_api_key, temperature=0),
             chain_type="stuff",
             retriever=vectorstore.as_retriever()
         )
 
-        result = qa.run(query)
-        st.success(result)
+        # Run Query
+        answer = qa.run(query)
+        st.success(answer)
